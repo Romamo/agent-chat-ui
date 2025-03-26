@@ -11,7 +11,8 @@ import {
   Dispatch,
   SetStateAction,
 } from "react";
-import { createClient } from "./client";
+import { useAuth } from "./Auth";
+import { getLangGraphHeaders } from "@/lib/auth-config";
 
 interface ThreadContextType {
   getThreads: () => Promise<Thread[]>;
@@ -23,9 +24,14 @@ interface ThreadContextType {
 
 const ThreadContext = createContext<ThreadContextType | undefined>(undefined);
 
-function getThreadSearchMetadata(
-  assistantId: string,
-): { graph_id: string } | { assistant_id: string } {
+// Define a type for thread metadata that can include user_id
+type ThreadSearchMetadata = {
+  graph_id?: string;
+  assistant_id?: string;
+  user_id?: string;
+};
+
+function getThreadSearchMetadata(assistantId: string): ThreadSearchMetadata {
   if (validate(assistantId)) {
     return { assistant_id: assistantId };
   } else {
@@ -38,20 +44,64 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
   const [assistantId] = useQueryState("assistantId");
   const [threads, setThreads] = useState<Thread[]>([]);
   const [threadsLoading, setThreadsLoading] = useState(false);
+  
+  // Get user ID from Auth provider if user is authenticated
+  const { user, isAuthenticated } = useAuth();
 
+  // Get accessToken from Auth provider at component level
+  const { accessToken } = useAuth();
+  
   const getThreads = useCallback(async (): Promise<Thread[]> => {
     if (!apiUrl || !assistantId) return [];
-    const client = createClient(apiUrl, getApiKey() ?? undefined);
+    
+    // Get API key
+    const apiKey = getApiKey();
+    
+    // Build search metadata with assistant/graph ID
+    const searchMetadata: ThreadSearchMetadata = {
+      ...getThreadSearchMetadata(assistantId),
+    };
+    
+    // Add user ID to metadata search if user is authenticated
+    if (isAuthenticated && user) {
+      console.log(`Filtering threads for user ID: ${user.id}`);
+      searchMetadata.user_id = user.id;
+    } else {
+      console.log('User not authenticated, not filtering threads by user ID');
+    }
 
-    const threads = await client.threads.search({
-      metadata: {
-        ...getThreadSearchMetadata(assistantId),
+    // Add authentication headers to the request
+    const headers = getLangGraphHeaders(apiKey, isAuthenticated && accessToken ? accessToken : null);
+    
+    console.log('Thread search headers:', headers, 'Auth token available:', !!accessToken, 'User authenticated:', isAuthenticated);
+    
+    // Use fetch with authentication headers instead of client.threads.search
+    const response = await fetch(`${apiUrl}/threads/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers
       },
-      limit: 100,
+      body: JSON.stringify({
+        metadata: searchMetadata,
+        limit: 100
+      })
     });
+    
+    if (!response.ok) {
+      console.error('Failed to fetch threads:', await response.text());
+      return [];
+    }
+    
+    const threads: Thread[] = await response.json();
+    
+    // Log the number of threads found
+    console.log(`Found ${threads.length} threads for ${isAuthenticated ? `user ${user?.id}` : 'anonymous user'}`);
+    
+    // If not authenticated, threads will be filtered by assistant/graph ID only
 
     return threads;
-  }, [apiUrl, assistantId]);
+  }, [apiUrl, assistantId, isAuthenticated, user, accessToken]);
 
   const value = {
     getThreads,

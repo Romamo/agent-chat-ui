@@ -21,6 +21,8 @@ import { ArrowRight } from "lucide-react";
 import { PasswordInput } from "@/components/ui/password-input";
 import { getApiKey } from "@/lib/api-key";
 import { useThreads } from "./Thread";
+import { useAuth } from "./Auth";
+import { getLangGraphHeaders } from "@/lib/auth-config";
 import { toast } from "sonner";
 
 export type StateType = { messages: Message[]; ui?: UIMessage[] };
@@ -46,14 +48,13 @@ async function sleep(ms = 4000) {
 async function checkGraphStatus(
   apiUrl: string,
   apiKey: string | null,
+  authToken: string | null,
 ): Promise<boolean> {
   try {
+    const headers = getLangGraphHeaders(apiKey, authToken);
+    console.log('checkGraphStatus', headers);
     const res = await fetch(`${apiUrl}/info`, {
-      ...(apiKey && {
-        headers: {
-          "X-Api-Key": apiKey,
-        },
-      }),
+      headers,
     });
 
     return res.ok;
@@ -68,14 +69,66 @@ const StreamSession = ({
   apiKey,
   apiUrl,
   assistantId,
+  authToken,
+  userId,
 }: {
   children: ReactNode;
   apiKey: string | null;
   apiUrl: string;
   assistantId: string;
+  authToken: string | null;
+  userId: string | null;
 }) => {
   const [threadId, setThreadId] = useQueryState("threadId");
   const { getThreads, setThreads } = useThreads();
+  // Create a function to modify requests to include user ID in thread creation
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Store the original fetch function
+    const originalFetch = window.fetch;
+    
+    // Override the global fetch function
+    window.fetch = function(input: RequestInfo | URL, init?: RequestInit) {
+      // Convert input to string to check if it's a thread creation request
+      const url = input.toString();
+      
+      // Only modify thread creation requests
+      if (url.includes('/threads') && init?.method === 'POST') {
+        try {
+          // Get the request body
+          const bodyStr = init.body as string;
+          if (bodyStr) {
+            const body = JSON.parse(bodyStr);
+            
+            // Add user ID to thread metadata
+            body.metadata = { ...body.metadata, user_id: userId };
+            
+            // Update the request with the modified body
+            init.body = JSON.stringify(body);
+            
+            console.log(`Adding user ID ${userId} to thread creation:`, body);
+          }
+        } catch (error) {
+          console.error('Error adding user ID to thread creation:', error);
+        }
+      }
+      
+      // Add auth headers to all requests
+      const headers = getLangGraphHeaders(apiKey, authToken);
+      init = init || {};
+      init.headers = { ...init.headers, ...headers };
+      
+      // Call the original fetch with our modifications
+      return originalFetch(input, init);
+    };
+    
+    // Cleanup: restore the original fetch when component unmounts
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [userId, apiKey, authToken]);
+  
   const streamValue = useTypedStream({
     apiUrl,
     apiKey: apiKey ?? undefined,
@@ -95,8 +148,19 @@ const StreamSession = ({
     },
   });
 
+  // Get auth loading state from Auth provider
+  const { isLoading: authLoading } = useAuth();
+  
   useEffect(() => {
-    checkGraphStatus(apiUrl, apiKey).then((ok) => {
+    console.log('useEffect', { authLoading });
+    // Only check graph status after auth is initialized
+    if (authLoading) {
+      console.log('Skipping graph status check - auth still loading');
+      return;
+    }
+    
+    console.log('Checking graph status with auth initialized:', { authToken });
+    checkGraphStatus(apiUrl, apiKey, authToken).then((ok) => {
       if (!ok) {
         toast.error("Failed to connect to LangGraph server", {
           description: () => (
@@ -111,7 +175,7 @@ const StreamSession = ({
         });
       }
     });
-  }, [apiKey, apiUrl]);
+  }, [apiKey, apiUrl, authToken, authLoading]); // Re-run when auth loading state changes
 
   return (
     <StreamContext.Provider value={streamValue}>
@@ -127,6 +191,9 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   const [apiKey, _setApiKey] = useState(() => {
     return getApiKey();
   });
+  
+  // Get auth token, user ID, and loading state from Auth provider
+  const { accessToken, isAuthenticated, user, isLoading: authLoading } = useAuth();
 
   const setApiKey = (key: string) => {
     window.localStorage.setItem("lg:chat:apiKey", key);
@@ -233,8 +300,32 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
     );
   }
 
+  // Show loading state while auth is initializing
+  if (authLoading) {
+    console.log('StreamProvider: Auth still loading, not rendering StreamSession yet');
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <LangGraphLogoSVG className="h-10 text-gray-400" />
+          <div className="text-gray-500">Initializing authentication...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Only render StreamSession after auth is fully loaded
+  console.log('StreamProvider: Auth loaded, rendering StreamSession with auth token:', !!accessToken);
+  
+  // Note: Thread loading is now handled in the ThreadHistory component
+  
   return (
-    <StreamSession apiKey={apiKey} apiUrl={apiUrl} assistantId={assistantId}>
+    <StreamSession 
+      apiKey={apiKey} 
+      apiUrl={apiUrl} 
+      assistantId={assistantId}
+      authToken={isAuthenticated ? accessToken : null}
+      userId={isAuthenticated && user ? user.id : null}
+    >
       {children}
     </StreamSession>
   );

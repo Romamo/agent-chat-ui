@@ -14,6 +14,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   userData: UserData | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
   isAuthEnabled: boolean;
   isLoading: boolean;
@@ -29,6 +30,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Get the configured auth provider
@@ -91,6 +93,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.log('Initial session found', session.user.id);
             setSession(session);
             setUser(session.user);
+            setAccessToken(session.access_token);
             
             // Set user data from auth information
             console.log('Setting user data from session:', session.user);
@@ -122,6 +125,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           console.log('Auth state changed:', _event, session ? session.user.id : 'null');
           setSession(session);
           setUser(session?.user ?? null);
+          setAccessToken(session?.access_token ?? null);
           
           if (session?.user) {
             // Set user data from auth information
@@ -262,6 +266,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setSession(null);
       setUser(null);
       setUserData(null);
+      setAccessToken(null);
       
       console.log('All auth state reset after sign out');
       toast.success('Signed out successfully');
@@ -320,6 +325,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     session,
     user,
     userData,
+    accessToken,
     isAuthenticated: !!user,
     isAuthEnabled,
     isLoading,

@@ -218,24 +218,31 @@ export function Thread() {
         }
       >
         {!chatStarted && (
-          <div className="absolute top-0 left-0 w-full flex items-center justify-between gap-3 p-2 pl-4 z-10">
-            {(!chatHistoryOpen || !isLargeScreen) && (
-              <Button
-                className="hover:bg-gray-100"
-                variant="ghost"
-                onClick={() => setChatHistoryOpen((p) => !p)}
-              >
-                {chatHistoryOpen ? (
-                  <PanelRightOpen className="size-5" />
-                ) : (
-                  <PanelRightClose className="size-5" />
-                )}
-              </Button>
-            )}
+          <div className="absolute top-0 left-0 w-full flex items-center justify-between z-10 h-[52px] px-4">
+            <div className="flex items-center">
+              {(!chatHistoryOpen || !isLargeScreen) ? (
+                <Button
+                  className="hover:bg-gray-100"
+                  variant="ghost"
+                  onClick={() => setChatHistoryOpen((p) => !p)}
+                >
+                  {chatHistoryOpen ? (
+                    <PanelRightOpen className="size-5" />
+                  ) : (
+                    <PanelRightClose className="size-5" />
+                  )}
+                </Button>
+              ) : (
+                <div className="w-10"></div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <AuthButton />
+            </div>
           </div>
         )}
         {chatStarted && (
-          <div className="flex items-center justify-between gap-3 p-2 pl-4 z-10 relative">
+          <div className="flex items-center justify-between gap-3 h-[52px] px-4 z-10 relative">
             <div className="flex items-center justify-start gap-2 relative">
               <div className="absolute left-0 z-10">
                 {(!chatHistoryOpen || !isLargeScreen) && (
