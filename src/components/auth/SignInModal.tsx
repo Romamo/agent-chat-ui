@@ -11,11 +11,12 @@ import { toast } from 'sonner';
 interface SignInModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSignInSuccess?: () => void;
 }
 
 type AuthMode = 'signin' | 'signup' | 'reset';
 
-export const SignInModal: React.FC<SignInModalProps> = ({ isOpen, onClose }) => {
+export const SignInModal: React.FC<SignInModalProps> = ({ isOpen, onClose, onSignInSuccess }) => {
   const { signIn, signUp, resetPassword, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,7 +28,13 @@ export const SignInModal: React.FC<SignInModalProps> = ({ isOpen, onClose }) => 
     try {
       if (mode === 'signin') {
         await signIn(email, password);
-        onClose();
+        
+        // Call onSignInSuccess if provided, otherwise just close the modal
+        if (onSignInSuccess) {
+          onSignInSuccess();
+        } else {
+          onClose();
+        }
       } else if (mode === 'signup') {
         await signUp(email, password);
         // Don't close modal as user needs to verify email

@@ -56,6 +56,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (session) {
           setSession(session);
           setUser(session.user);
+          setAccessToken(session.access_token);
           
           // Set user data from auth information
           if (session.user) {
@@ -122,15 +123,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Listen for auth changes
       const response = supabase.auth.onAuthStateChange(
         async (_event: string, session: Session | null) => {
-          console.log('Auth state changed:', _event, session ? session.user.id : 'null');
           setSession(session);
           setUser(session?.user ?? null);
           setAccessToken(session?.access_token ?? null);
           
           if (session?.user) {
             // Set user data from auth information
-            console.log('Setting user data after auth change:', session.user);
-            
             setUserData({
               id: session.user.id,
               email: session.user.email || '',
@@ -161,19 +159,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signIn = async (email: string, password: string) => {
     // Check if auth is enabled and the provider is supported
     if (authProvider === 'none') {
+      console.log('[Auth] Auth is disabled, cannot sign in');
       toast.error('Authentication is not enabled');
       return;
     }
     
     // Check if Supabase provider is configured correctly
     if (authProvider === 'supabase' && !supabase) {
+      console.log('[Auth] Supabase not configured properly');
       toast.error('Supabase authentication is not properly configured');
       return;
     }
     
-    console.log('Attempting to sign in:', email);
+    console.log('[Auth] Attempting to sign in with email:', email);
 
     try {
+      console.log('[Auth] Starting sign in process');
       setIsLoading(true);
       
       // At this point, we know authProvider is 'supabase' and supabase is not null
@@ -187,10 +188,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
       toast.success('Signed in successfully');
     } catch (error: any) {
-      console.error('Error signing in:', error);
       toast.error(error.message || 'Failed to sign in');
       throw error;
     } finally {
