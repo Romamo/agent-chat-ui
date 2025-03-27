@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useStreamContext } from "@/providers/Stream";
 import { useAuth } from "@/auth/providers";
 import { useState, FormEvent } from "react";
+import { getAuthProvider } from "@/lib/auth-config";
 import { SignInModal } from "../auth/SignInModal";
 import { AuthButton } from "../auth/AuthButton";
 import { Button } from "../ui/button";
@@ -192,7 +193,29 @@ export function Thread() {
     }
     
     // Check if user is authenticated before sending the message
-    if (!isAuthenticated) {
+    // Skip authentication check if using anonymous auth provider
+    const currentAuthProvider = getAuthProvider();
+    
+    // Direct check of environment variables for debugging
+    const directEnvCheck = {
+      VITE_ENABLE_AUTH: import.meta.env.VITE_ENABLE_AUTH,
+      VITE_AUTH_PROVIDER: import.meta.env.VITE_AUTH_PROVIDER,
+      rawProvider: import.meta.env.VITE_AUTH_PROVIDER,
+      providerType: typeof import.meta.env.VITE_AUTH_PROVIDER
+    };
+    
+    console.log('[Thread] Direct env check:', directEnvCheck);
+    console.log('[Thread] Auth check when sending message:', { 
+      isAuthenticated, 
+      authProvider: currentAuthProvider,
+      willShowSignIn: !isAuthenticated && currentAuthProvider !== 'anon'
+    });
+    
+    // Force skip sign-in if VITE_AUTH_PROVIDER is explicitly 'anon'
+    const forceSkipSignIn = import.meta.env.VITE_AUTH_PROVIDER === 'anon';
+    
+    if (!isAuthenticated && currentAuthProvider !== 'anon' && !forceSkipSignIn) {
+      console.log('[Thread] Opening sign-in modal');
       setPendingMessage(messageToSend);
       localStorage.setItem('pendingMessage', messageToSend);
       setIsSignInModalOpen(true);

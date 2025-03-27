@@ -7,26 +7,30 @@
 export const isAuthEnabled = import.meta.env.VITE_ENABLE_AUTH === 'true';
 
 // Authentication provider type
-export type AuthProvider = 'supabase' | 'anon' | 'none';
+export type AuthProvider = 'supabase' | 'anon';
 
 // Get the configured authentication provider
 export const getAuthProvider = (): AuthProvider => {
-  if (!isAuthEnabled) {
-    return 'none';
-  }
+  // Log environment variables for debugging
+  console.log('[Auth Config] Environment variables:', {
+    VITE_ENABLE_AUTH: import.meta.env.VITE_ENABLE_AUTH,
+    VITE_AUTH_PROVIDER: import.meta.env.VITE_AUTH_PROVIDER,
+    isAuthEnabled
+  });
   
-  // Check if a specific auth provider is configured
-  const configuredProvider = import.meta.env.VITE_AUTH_PROVIDER as AuthProvider;
+  // Get the configured provider, defaulting to 'anon' if not specified
+  const configuredProvider = import.meta.env.VITE_AUTH_PROVIDER as AuthProvider || 'anon';
+  console.log('[Auth Config] Effective auth provider:', configuredProvider);
   
-  if (configuredProvider === 'anon') {
+  // Only use Supabase if explicitly configured and auth is enabled
+  if (configuredProvider === 'supabase' && isAuthEnabled) {
+    console.log('[Auth Config] Using Supabase provider');
+    return 'supabase';
+  } else {
+    // For all other cases, use anonymous auth
+    console.log('[Auth Config] Using anonymous auth provider');
     return 'anon';
   }
-  
-  // Always use Supabase with anonymous fallback when Supabase is the provider
-  console.log('[Auth Config] Using Supabase with anonymous fallback');
-  
-  // Default to Supabase (which includes anonymous fallback)
-  return 'supabase';
 };
 
 /**
@@ -108,10 +112,6 @@ export interface AuthConfig {
 export const getAuthConfig = (): AuthConfig => {
   const provider = getAuthProvider();
   
-  if (provider === 'none') {
-    return { provider: 'none' };
-  }
-  
   if (provider === 'anon') {
     return { provider: 'anon' };
   }
@@ -125,5 +125,5 @@ export const getAuthConfig = (): AuthConfig => {
   }
   
   // Default fallback
-  return { provider: 'none' };
+  return { provider: 'anon' };
 };

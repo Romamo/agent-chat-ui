@@ -31,8 +31,17 @@ export const AuthButton: React.FC = () => {
     }
   }, [isAuthenticated, isAuthEnabled, isAnonymous, authProvider, user, userData]);
 
-  // Don't render anything if auth is disabled or no provider is configured
-  if (authProvider === 'none' || !isAuthEnabled) {
+  // Don't render anything if auth is disabled, no provider is configured, or using anonymous auth
+  console.log('[AuthButton] Deciding whether to render:', {
+    authProvider,
+    isAuthEnabled,
+    isAuthenticated,
+    isAnonymous,
+    shouldHide: authProvider === 'anon' || !isAuthEnabled
+  });
+  
+  if (authProvider === 'anon' || !isAuthEnabled) {
+    console.log('[AuthButton] Hiding auth button');
     return null;
   }
 
