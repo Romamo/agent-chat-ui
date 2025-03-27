@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { useAuth } from '@/providers/Auth';
+import React, { useState, useCallback, useMemo } from 'react';
+import { useAuth } from '@/auth/providers';
+import { useAnonWithAuth } from '@/auth/providers/AnonWithAuthProvider';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -14,10 +15,11 @@ import { LogOut, User } from 'lucide-react';
 
 export const UserProfile: React.FC = () => {
   const { userData, signOut, isLoading, user, isAuthenticated } = useAuth();
+  const { isAnonymous } = useAnonWithAuth();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  // Handle sign out with proper state management
-  const handleSignOut = async () => {
+  // Handle sign out with proper state management - memoized to prevent recreation on each render
+  const handleSignOut = useCallback(async () => {
     try {
       setIsSigningOut(true);
       await signOut();
@@ -28,21 +30,33 @@ export const UserProfile: React.FC = () => {
     } finally {
       setIsSigningOut(false);
     }
-  };
+  }, [signOut]);
 
-  // Debug logging
-  console.log('UserProfile render:', { 
-    userData, 
-    user: user ? 'exists' : 'null',
-    isAuthenticated,
-    isLoading,
-    isSigningOut
-  });
+  // Debug logging - only in development to prevent performance impact in production
+  if (process.env.NODE_ENV === 'development') {
+    // Using React.useEffect to avoid re-renders caused by console.log
+    React.useEffect(() => {
+      console.log('UserProfile state:', { 
+        userData, 
+        user: user ? 'exists' : 'null',
+        isAuthenticated,
+        isAnonymous,
+        isLoading,
+        isSigningOut
+      });
+    }, [userData, user, isAuthenticated, isAnonymous, isLoading, isSigningOut]);
+  }
 
-  // If we have a user but no userData, show a fallback profile button
-  if (!userData && user) {
-    console.log('UserProfile: No userData but user exists, showing fallback');
-    return (
+  // Memoize the fallback UI for when we have a user but no userData
+  const fallbackProfile = useMemo(() => {
+    // Don't show profile for anonymous users
+    if (isAnonymous) {
+      return null;
+    }
+    
+    // Show fallback profile for authenticated users with missing userData
+    if (!userData && user) {
+      return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" className="relative h-8 w-8 rounded-full">
@@ -71,27 +85,35 @@ export const UserProfile: React.FC = () => {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    );
+      );
+    }
+    return null;
+  }, [userData, user, isAnonymous, isLoading, isSigningOut, handleSignOut]);
+  
+  // Return the fallback UI if available
+  if (fallbackProfile) {
+    return fallbackProfile;
   }
   
-  if (!userData) {
-    console.log('UserProfile: No userData and no user, returning null');
+  // Return null if no userData is available or if user is anonymous
+  if (!userData || isAnonymous) {
     return null;
   }
 
-  // Get initials for avatar fallback
-  const getInitials = () => {
-    if (userData.name) {
+  // Get initials for avatar fallback - memoized to prevent recalculation on every render
+  const initials = useMemo(() => {
+    if (userData?.name) {
       return userData.name
         .split(' ')
         .map((n) => n[0])
         .join('')
         .toUpperCase();
     }
-    return userData.email?.[0].toUpperCase() || 'U';
-  };
+    return userData?.email?.[0]?.toUpperCase() || 'U';
+  }, [userData?.name, userData?.email]);
 
-  return (
+  // Memoize the main profile UI to prevent unnecessary re-renders
+  const mainProfile = useMemo(() => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
@@ -99,7 +121,7 @@ export const UserProfile: React.FC = () => {
             {userData.avatar_url && (
               <AvatarImage src={userData.avatar_url} alt={userData.name || 'User'} />
             )}
-            <AvatarFallback>{getInitials()}</AvatarFallback>
+            <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
@@ -123,7 +145,9 @@ export const UserProfile: React.FC = () => {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  ), [userData, isLoading, isSigningOut, initials, handleSignOut]);
+
+  return mainProfile;
 };
 
 export default UserProfile;

@@ -14,7 +14,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PanelRightOpen, PanelRightClose } from "lucide-react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { useAuth } from "@/providers/Auth";
+import { useAuth } from "@/auth/providers";
 
 function ThreadList({
   threads,

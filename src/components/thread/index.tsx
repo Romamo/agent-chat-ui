@@ -3,7 +3,7 @@ import { ReactNode, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useStreamContext } from "@/providers/Stream";
-import { useAuth } from "@/providers/Auth";
+import { useAuth } from "@/auth/providers";
 import { useState, FormEvent } from "react";
 import { SignInModal } from "../auth/SignInModal";
 import { AuthButton } from "../auth/AuthButton";

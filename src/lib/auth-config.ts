@@ -7,7 +7,7 @@
 export const isAuthEnabled = import.meta.env.VITE_ENABLE_AUTH === 'true';
 
 // Authentication provider type
-export type AuthProvider = 'supabase' | 'none';
+export type AuthProvider = 'supabase' | 'anon' | 'none';
 
 // Get the configured authentication provider
 export const getAuthProvider = (): AuthProvider => {
@@ -15,8 +15,17 @@ export const getAuthProvider = (): AuthProvider => {
     return 'none';
   }
   
-  // Currently only Supabase is supported, but this could be extended
-  // to support other providers like Firebase, Auth0, etc.
+  // Check if a specific auth provider is configured
+  const configuredProvider = import.meta.env.VITE_AUTH_PROVIDER as AuthProvider;
+  
+  if (configuredProvider === 'anon') {
+    return 'anon';
+  }
+  
+  // Always use Supabase with anonymous fallback when Supabase is the provider
+  console.log('[Auth Config] Using Supabase with anonymous fallback');
+  
+  // Default to Supabase (which includes anonymous fallback)
   return 'supabase';
 };
 
@@ -27,15 +36,39 @@ export const getAuthProvider = (): AuthProvider => {
 export const getLangGraphHeaders = (apiKey: string | null, authToken: string | null): Record<string, string> => {
   const headers: Record<string, string> = {};
   
+  // Ensure we have valid values for logging
+  const tokenToLog = authToken ? 
+    (typeof authToken === 'string' && authToken.length > 5 ? 
+      `${authToken.substring(0, 5)}...` : 
+      'invalid format') : 
+    null;
+  
+  console.log('[getLangGraphHeaders] Called with:', {
+    hasApiKey: !!apiKey,
+    hasAuthToken: !!authToken,
+    authTokenType: authToken ? typeof authToken : 'null',
+    authToken: tokenToLog
+  });
+  
   // Add API key if available
   if (apiKey) {
     headers['X-Api-Key'] = apiKey;
-  }
-  // Add auth token if available
-  if (authToken) {
-    headers['Authorization'] = `Bearer ${authToken}`;
+    console.log('[getLangGraphHeaders] Added X-Api-Key header');
   }
   
+  // Add auth token if available and valid
+  if (authToken && typeof authToken === 'string' && authToken.trim() !== '') {
+    headers['Authorization'] = `Bearer ${authToken}`;
+    console.log('[getLangGraphHeaders] Added Authorization header with Bearer token');
+  } else {
+    console.log('[getLangGraphHeaders] No Authorization header added:', 
+      authToken === null ? '(null token)' : 
+      authToken === undefined ? '(undefined token)' : 
+      authToken === '' ? '(empty string token)' : 
+      '(invalid token format)');
+  }
+  
+  console.log('[getLangGraphHeaders] Returning headers:', headers);
   return headers;
 };
 
@@ -68,6 +101,7 @@ export interface AuthConfig {
   // Add provider-specific configuration here as needed
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  // No additional config needed for anon provider
 }
 
 // Get the full authentication configuration
@@ -76,6 +110,10 @@ export const getAuthConfig = (): AuthConfig => {
   
   if (provider === 'none') {
     return { provider: 'none' };
+  }
+  
+  if (provider === 'anon') {
+    return { provider: 'anon' };
   }
   
   if (provider === 'supabase') {

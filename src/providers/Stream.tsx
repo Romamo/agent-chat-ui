@@ -4,6 +4,7 @@ import React, {
   ReactNode,
   useState,
   useEffect,
+  useCallback,
 } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import { type Message } from "@langchain/langgraph-sdk";
@@ -21,7 +22,7 @@ import { ArrowRight } from "lucide-react";
 import { PasswordInput } from "@/components/ui/password-input";
 import { getApiKey } from "@/lib/api-key";
 import { useThreads } from "./Thread";
-import { useAuth } from "./Auth";
+import { useAuth } from "@/auth/providers";
 import { getLangGraphHeaders } from "@/lib/auth-config";
 import { toast } from "sonner";
 
@@ -79,12 +80,19 @@ const StreamSession = ({
   authToken: string | null;
   userId: string | null;
 }) => {
+  // Log the props received by StreamSession
+  console.log('StreamSession initialized with:', {
+    hasApiKey: !!apiKey,
+    apiUrl,
+    assistantId,
+    hasAuthToken: !!authToken,
+    authToken: authToken ? `${authToken.substring(0, 5)}...` : null,
+    userId
+  });
   const [threadId, setThreadId] = useQueryState("threadId");
   const { getThreads, setThreads } = useThreads();
-  // Create a function to modify requests to include user ID in thread creation
+  // Create a function to modify requests to include user ID in thread creation and add auth headers
   useEffect(() => {
-    if (!userId) return;
-    
     // Store the original fetch function
     const originalFetch = window.fetch;
     
@@ -93,8 +101,8 @@ const StreamSession = ({
       // Convert input to string to check if it's a thread creation request
       const url = input.toString();
       
-      // Only modify thread creation requests
-      if (url.includes('/threads') && init?.method === 'POST') {
+      // Only modify thread creation requests if userId is available
+      if (userId && url.includes('/threads') && init?.method === 'POST') {
         try {
           // Get the request body
           const bodyStr = init.body as string;
@@ -115,9 +123,23 @@ const StreamSession = ({
       }
       
       // Add auth headers to all requests
+      // For API key, always include it if available
+      // For auth token, only include it if it's an authenticated user (not anonymous)
+      console.log('Adding auth headers to request:', {
+        url,
+        hasApiKey: !!apiKey,
+        hasAuthToken: !!authToken,
+        authToken: authToken ? `${authToken.substring(0, 5)}...` : null
+      });
+      
       const headers = getLangGraphHeaders(apiKey, authToken);
       init = init || {};
       init.headers = { ...init.headers, ...headers };
+      
+      // Log auth headers for debugging
+      if (url.includes('/threads')) {
+        console.log('Auth headers for request to ' + url + ':', JSON.stringify(headers), 'Has auth token:', !!authToken);
+      }
       
       // Call the original fetch with our modifications
       return originalFetch(input, init);
@@ -187,20 +209,70 @@ const StreamSession = ({
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
+  // First, declare all state hooks at the top level
   const [apiUrl, setApiUrl] = useQueryState("apiUrl");
-  const [apiKey, _setApiKey] = useState(() => {
-    return getApiKey();
-  });
+  const [apiKey, _setApiKey] = useState(() => getApiKey());
+  const [assistantId, setAssistantId] = useQueryState("assistantId");
+  const [authTokenToUse, setAuthTokenToUse] = useState<string | null>(null);
   
   // Get auth token, user ID, and loading state from Auth provider
-  const { accessToken, isAuthenticated, user, isLoading: authLoading } = useAuth();
+  const { accessToken, isAuthenticated, userId, isAnonymous, isLoading: authLoading } = useAuth();
 
-  const setApiKey = (key: string) => {
+  // Define all callbacks after state hooks
+  const setApiKey = useCallback((key: string) => {
     window.localStorage.setItem("lg:chat:apiKey", key);
     _setApiKey(key);
-  };
-
-  const [assistantId, setAssistantId] = useQueryState("assistantId");
+  }, [_setApiKey]);
+  
+  // Define the token update function - moved up to ensure consistent hook order
+  const updateAuthToken = useCallback(async () => {
+    // First set the token from props if available
+    if (isAuthenticated && !isAnonymous && accessToken) {
+      console.log('StreamProvider: Using access token from auth context');
+      setAuthTokenToUse(accessToken);
+      return;
+    }
+    
+    // If not authenticated or is anonymous, clear the token
+    if (!isAuthenticated || isAnonymous) {
+      console.log('StreamProvider: User not authenticated or anonymous, clearing token');
+      setAuthTokenToUse(null);
+      return;
+    }
+    
+    // If authenticated but no access token, try to get it from Supabase
+    try {
+      console.log('StreamProvider: Attempting to get token directly from Supabase');
+      // Import supabase client directly to get the current session
+      const { supabase } = await import('@/lib/supabase');
+      if (!supabase) {
+        console.error('StreamProvider: Supabase client is not available');
+        return;
+      }
+      
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        console.log('StreamProvider: Retrieved access token directly from Supabase session');
+        setAuthTokenToUse(data.session.access_token);
+      } else {
+        console.log('StreamProvider: No access token in Supabase session');
+        setAuthTokenToUse(null);
+      }
+    } catch (error) {
+      console.error('StreamProvider: Error getting access token from Supabase:', error);
+      setAuthTokenToUse(null);
+    }
+  }, [isAuthenticated, isAnonymous, accessToken, setAuthTokenToUse]);
+  
+  // Use a single useEffect to update the token
+  useEffect(() => {
+    // Only try to get the token from Supabase if authenticated but no token
+    if (isAuthenticated && !isAnonymous) {
+      updateAuthToken();
+    } else {
+      setAuthTokenToUse(null);
+    }
+  }, [isAuthenticated, isAnonymous, accessToken, userId, updateAuthToken]);
 
   if (!apiUrl || !assistantId) {
     return (
@@ -314,17 +386,31 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   }
 
   // Only render StreamSession after auth is fully loaded
-  console.log('StreamProvider: Auth loaded, rendering StreamSession with auth token:', !!accessToken);
+  console.log('StreamProvider: Auth loaded, rendering StreamSession with:', {
+    isAuthenticated,
+    isAnonymous,
+    hasAuthToken: !!accessToken,
+    accessToken: accessToken ? `${accessToken.substring(0, 5)}...` : null,
+    hasUserId: !!userId,
+    userId: userId
+  });
   
   // Note: Thread loading is now handled in the ThreadHistory component
+  
+  console.log('StreamProvider passing to StreamSession:', {
+    isAuthenticated,
+    isAnonymous,
+    accessToken: accessToken ? `${accessToken.substring(0, 5)}...` : null,
+    authTokenToUse: authTokenToUse ? `${authTokenToUse.substring(0, 5)}...` : null
+  });
   
   return (
     <StreamSession 
       apiKey={apiKey} 
       apiUrl={apiUrl} 
       assistantId={assistantId}
-      authToken={isAuthenticated ? accessToken : null}
-      userId={isAuthenticated && user ? user.id : null}
+      authToken={authTokenToUse}
+      userId={userId}
     >
       {children}
     </StreamSession>
