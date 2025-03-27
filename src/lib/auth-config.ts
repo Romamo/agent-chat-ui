@@ -31,7 +31,6 @@ export const getLangGraphHeaders = (apiKey: string | null, authToken: string | n
   if (apiKey) {
     headers['X-Api-Key'] = apiKey;
   }
-  console.log('Auth token:', authToken);
   // Add auth token if available
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;

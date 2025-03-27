@@ -22,6 +22,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -323,6 +324,67 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     isAuthenticated: !!user
   });
   
+  // Sign in with Google
+  const signInWithGoogle = async () => {
+    // Check if auth is enabled and the provider is supported
+    if (authProvider === 'none') {
+      toast.error('Authentication is not enabled');
+      return;
+    }
+    
+    // Check if Supabase provider is configured correctly
+    if (authProvider === 'supabase' && !supabase) {
+      toast.error('Supabase authentication is not properly configured');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // At this point, we know authProvider is 'supabase' and supabase is not null
+      if (!supabase) {
+        throw new Error('Supabase client is not available');
+      }
+      
+      // Get the current URL for redirection after authentication
+      const currentUrl = window.location.href;
+      
+      // Extract the URL parameters that need to be preserved
+      const url = new URL(currentUrl);
+      const apiUrl = url.searchParams.get('apiUrl');
+      const assistantId = url.searchParams.get('assistantId');
+      
+      // Build the redirect URL with the necessary parameters
+      let redirectUrl = window.location.origin;
+      if (apiUrl || assistantId) {
+        redirectUrl += '/?';
+        if (apiUrl) redirectUrl += `apiUrl=${encodeURIComponent(apiUrl)}`;
+        if (apiUrl && assistantId) redirectUrl += '&';
+        if (assistantId) redirectUrl += `assistantId=${encodeURIComponent(assistantId)}`;
+        if (url.hash) redirectUrl += url.hash;
+      }
+      
+      console.log('Redirecting to after auth:', redirectUrl);
+      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          // Redirect directly to the final URL after authentication
+          redirectTo: redirectUrl,
+        },
+      });
+
+      if (error) throw error;
+      // No need for success toast as the user will be redirected to Google
+    } catch (error: any) {
+      console.error('Error signing in with Google:', error);
+      toast.error(error.message || 'Failed to sign in with Google');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const value = {
     session,
     user,
@@ -335,6 +397,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     signUp,
     signOut,
     resetPassword,
+    signInWithGoogle,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
