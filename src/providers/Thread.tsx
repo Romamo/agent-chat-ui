@@ -25,11 +25,11 @@ interface ThreadContextType {
 
 const ThreadContext = createContext<ThreadContextType | undefined>(undefined);
 
-// Define a type for thread metadata that can include user_id
+// Define a type for thread metadata that can include owner
 type ThreadSearchMetadata = {
   graph_id?: string;
   assistant_id?: string;
-  user_id?: string;
+  owner?: string;
 };
 
 function getThreadSearchMetadata(assistantId: string): ThreadSearchMetadata {
@@ -105,12 +105,12 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       ...getThreadSearchMetadata(assistantId),
     };
     
-    // Add user ID to metadata search if user is authenticated
+    // Add owner to metadata search if user is authenticated
     if (isAuthenticated && user) {
-      console.log(`Filtering threads for user ID: ${user.id}`);
-      searchMetadata.user_id = user.id;
+      console.log(`Filtering threads for owner: ${user.id}`);
+      searchMetadata.owner = user.id;
     } else {
-      console.log('User not authenticated, not filtering threads by user ID');
+      console.log('User not authenticated, not filtering threads by owner');
     }
 
     // Add authentication headers to the request
@@ -126,7 +126,7 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     // Log the auth token being used
     console.log('Using auth token for request:', authTokenForRequests ? `${authTokenForRequests.substring(0, 5)}...` : null);
     
-    // Use the auth token from state
+    // Use the auth token from state (will be null for anonymous users)
     const headers = getLangGraphHeaders(apiKey, authTokenForRequests);
     
     console.log('Thread search headers:', JSON.stringify(headers), 'Auth token available:', !!accessToken, 'User authenticated:', isAuthenticated, 'Is anonymous:', isAnonymous);

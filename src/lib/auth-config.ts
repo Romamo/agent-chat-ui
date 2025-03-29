@@ -3,9 +3,6 @@
  * This file centralizes all authentication-related configuration
  */
 
-// Check if authentication is enabled via environment variables
-export const isAuthEnabled = import.meta.env.VITE_ENABLE_AUTH === 'true';
-
 // Authentication provider type
 export type AuthProvider = 'supabase' | 'anon';
 
@@ -13,22 +10,26 @@ export type AuthProvider = 'supabase' | 'anon';
 export const getAuthProvider = (): AuthProvider => {
   // Log environment variables for debugging
   console.log('[Auth Config] Environment variables:', {
-    VITE_ENABLE_AUTH: import.meta.env.VITE_ENABLE_AUTH,
-    VITE_AUTH_PROVIDER: import.meta.env.VITE_AUTH_PROVIDER,
-    isAuthEnabled
+    VITE_AUTH_PROVIDER: import.meta.env.VITE_AUTH_PROVIDER
   });
   
-  // Get the configured provider, defaulting to 'anon' if not specified
-  const configuredProvider = import.meta.env.VITE_AUTH_PROVIDER as AuthProvider || 'anon';
+  // If VITE_AUTH_PROVIDER isn't set, use anonymous provider by default
+  if (!import.meta.env.VITE_AUTH_PROVIDER) {
+    console.log('[Auth Config] No auth provider specified, using anonymous auth provider by default');
+    return 'anon';
+  }
+  
+  // Get the configured provider
+  const configuredProvider = import.meta.env.VITE_AUTH_PROVIDER as AuthProvider;
   console.log('[Auth Config] Effective auth provider:', configuredProvider);
   
-  // Only use Supabase if explicitly configured and auth is enabled
-  if (configuredProvider === 'supabase' && isAuthEnabled) {
+  // Use the specified auth provider (Supabase or any future provider)
+  if (configuredProvider === 'supabase') {
     console.log('[Auth Config] Using Supabase provider');
     return 'supabase';
   } else {
-    // For all other cases, use anonymous auth
-    console.log('[Auth Config] Using anonymous auth provider');
+    // For any unrecognized provider, fall back to anonymous auth
+    console.log('[Auth Config] Unrecognized auth provider, falling back to anonymous auth');
     return 'anon';
   }
 };
@@ -36,8 +37,13 @@ export const getAuthProvider = (): AuthProvider => {
 /**
  * Get the headers for LangGraph API requests
  * This includes the API key and auth token if available
+ * @param apiKey - The API key to include in headers
+ * @param authToken - The authentication token to include in headers (will be null/empty for anonymous users)
  */
-export const getLangGraphHeaders = (apiKey: string | null, authToken: string | null): Record<string, string> => {
+export const getLangGraphHeaders = (
+  apiKey: string | null, 
+  authToken: string | null
+): Record<string, string> => {
   const headers: Record<string, string> = {};
   
   // Ensure we have valid values for logging
@@ -72,13 +78,14 @@ export const getLangGraphHeaders = (apiKey: string | null, authToken: string | n
       '(invalid token format)');
   }
   
-  console.log('[getLangGraphHeaders] Returning headers:', headers);
   return headers;
 };
 
 /**
  * Create a custom fetch function that includes auth headers
  * This can be used with the LangGraph SDK
+ * @param apiKey - The API key to include in headers
+ * @param authToken - The authentication token to include in headers (will be null/empty for anonymous users)
  */
 export const createAuthFetch = (apiKey: string | null, authToken: string | null) => {
   return async (url: string, options: RequestInit = {}) => {

@@ -49,7 +49,7 @@ async function sleep(ms = 4000) {
 async function checkGraphStatus(
   apiUrl: string,
   apiKey: string | null,
-  authToken: string | null,
+  authToken: string | null
 ): Promise<boolean> {
   try {
     const headers = getLangGraphHeaders(apiKey, authToken);
@@ -72,6 +72,7 @@ const StreamSession = ({
   assistantId,
   authToken,
   userId,
+  isAnonymous,
 }: {
   children: ReactNode;
   apiKey: string | null;
@@ -79,6 +80,7 @@ const StreamSession = ({
   assistantId: string;
   authToken: string | null;
   userId: string | null;
+  isAnonymous: boolean;
 }) => {
   // Log the props received by StreamSession
   console.log('StreamSession initialized with:', {
@@ -109,13 +111,13 @@ const StreamSession = ({
           if (bodyStr) {
             const body = JSON.parse(bodyStr);
             
-            // Add user ID to thread metadata
-            body.metadata = { ...body.metadata, user_id: userId };
+            // Add owner to thread metadata
+            body.metadata = { ...body.metadata, owner: userId };
             
             // Update the request with the modified body
             init.body = JSON.stringify(body);
             
-            console.log(`Adding user ID ${userId} to thread creation:`, body);
+            console.log(`Adding owner ${userId} to thread creation:`, body);
           }
         } catch (error) {
           console.error('Error adding user ID to thread creation:', error);
@@ -129,10 +131,13 @@ const StreamSession = ({
         url,
         hasApiKey: !!apiKey,
         hasAuthToken: !!authToken,
-        authToken: authToken ? `${authToken.substring(0, 5)}...` : null
+        authToken: authToken ? `${authToken.substring(0, 5)}...` : null,
+        isAnonymous // Use the isAnonymous flag passed from StreamProvider
       });
       
-      const headers = getLangGraphHeaders(apiKey, authToken);
+      // For anonymous users, always set authToken to null to prevent Authorization header
+      const tokenToUse = isAnonymous ? null : authToken;
+      const headers = getLangGraphHeaders(apiKey, tokenToUse);
       init = init || {};
       init.headers = { ...init.headers, ...headers };
       
@@ -181,8 +186,10 @@ const StreamSession = ({
       return;
     }
     
-    console.log('Checking graph status with auth initialized:', { authToken });
-    checkGraphStatus(apiUrl, apiKey, authToken).then((ok) => {
+    console.log('Checking graph status with auth initialized:', { authToken, isAnonymous });
+    // For anonymous users, explicitly set authToken to null
+    const tokenToUse = isAnonymous ? null : authToken;
+    checkGraphStatus(apiUrl, apiKey, tokenToUse).then((ok) => {
       if (!ok) {
         toast.error("Failed to connect to LangGraph server", {
           description: () => (
@@ -411,6 +418,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
       assistantId={assistantId}
       authToken={authTokenToUse}
       userId={userId}
+      isAnonymous={isAnonymous}
     >
       {children}
     </StreamSession>

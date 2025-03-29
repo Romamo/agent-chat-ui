@@ -7,41 +7,44 @@ import { SignInModal } from './SignInModal';
 import { LogIn } from 'lucide-react';
 import { getAuthProvider } from '@/lib/auth-config';
 
-export const AuthButton: React.FC = () => {
-  const { isAuthenticated, isAuthEnabled, user, userData } = useAuth();
+const AuthButtonComponent: React.FC = () => {
+  const { isAuthenticated, user, userData } = useAuth();
   const { isAnonymous } = useAnonWithAuth();
   const [isSignInModalOpen, setIsSignInModalOpen] = useState(false);
   
   // Memoize modal open handler to prevent recreation on each render
   const handleOpenSignInModal = useCallback(() => setIsSignInModalOpen(true), []);
   const handleCloseSignInModal = useCallback(() => setIsSignInModalOpen(false), []);
-  const authProvider = getAuthProvider();
+  // Memoize the auth provider to prevent it from being called on every render
+  const authProvider = useMemo(() => getAuthProvider(), []);
   
   // Debug logging only in development and only when dependencies change
   React.useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log('AuthButton state changed:', { 
         isAuthenticated, 
-        isAuthEnabled, 
         isAnonymous,
         authProvider,
         user: user ? 'exists' : 'null',
         userData: userData ? 'exists' : 'null'
       });
     }
-  }, [isAuthenticated, isAuthEnabled, isAnonymous, authProvider, user, userData]);
+  }, [isAuthenticated, isAnonymous, authProvider, user, userData]);
 
-  // Don't render anything if auth is disabled, no provider is configured, or using anonymous auth
-  console.log('[AuthButton] Deciding whether to render:', {
-    authProvider,
-    isAuthEnabled,
-    isAuthenticated,
-    isAnonymous,
-    shouldHide: authProvider === 'anon' || !isAuthEnabled
-  });
+  // Don't render anything if auth is disabled or using anonymous auth
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[AuthButton] Deciding whether to render:', {
+      authProvider,
+      isAuthenticated,
+      isAnonymous,
+      shouldHide: authProvider === 'anon'
+    });
+  }
   
-  if (authProvider === 'anon' || !isAuthEnabled) {
-    console.log('[AuthButton] Hiding auth button');
+  if (authProvider === 'anon') {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[AuthButton] Hiding auth button');
+    }
     return null;
   }
 
@@ -66,15 +69,25 @@ export const AuthButton: React.FC = () => {
     />
   ), [isSignInModalOpen, handleCloseSignInModal]);
 
-  // Memoize the entire component output based on authentication state
+  // Render UserProfile for authenticated users, sign-in button otherwise
   const authContent = useMemo(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[AuthButton] Rendering auth content:', { 
+        isAuthenticated, 
+        isAnonymous, 
+        hasUser: !!user,
+        hasUserData: !!userData
+      });
+    }
+    
     // If authenticated and not anonymous, show the user profile
     if (isAuthenticated && !isAnonymous) {
       return <UserProfile />;
     }
+    
     // Otherwise show sign-in button
     return signInButton;
-  }, [isAuthenticated, isAnonymous, signInButton]);
+  }, [isAuthenticated, isAnonymous, signInButton, user, userData]);
 
   return (
     <>
@@ -84,4 +97,5 @@ export const AuthButton: React.FC = () => {
   );
 };
 
+export const AuthButton = React.memo(AuthButtonComponent);
 export default AuthButton;
