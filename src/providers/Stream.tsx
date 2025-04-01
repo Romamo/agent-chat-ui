@@ -220,12 +220,6 @@ const DEFAULT_ASSISTANT_ID = "agent";
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  // First, declare all state hooks at the top level
-  const [apiUrl, setApiUrl] = useQueryState("apiUrl");
-  const [apiKey, _setApiKey] = useState(() => getApiKey());
-  const [assistantId, setAssistantId] = useQueryState("assistantId");
-  const [authTokenToUse, setAuthTokenToUse] = useState<string | null>(null);
-  
   // Get auth token, user ID, and loading state from Auth provider
   const { accessToken, isAuthenticated, userId, isAnonymous, isLoading: authLoading } = useAuth();
 
@@ -237,7 +231,8 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   // Use URL params with env var fallbacks
   const [apiUrl, setApiUrl] = useQueryState("apiUrl", { defaultValue: envApiUrl || "" });
   const [assistantId, setAssistantId] = useQueryState("assistantId", { defaultValue: envAssistantId || "" });
-  
+  const [authTokenToUse, setAuthTokenToUse] = useState<string | null>(null);
+
   // For API key, use localStorage with env var fallback
   const [apiKey, _setApiKey] = useState(() => {
     const storedKey = getApiKey();
@@ -258,14 +253,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
       setAuthTokenToUse(accessToken);
       return;
     }
-    
-    // If not authenticated or is anonymous, clear the token
-    if (!isAuthenticated || isAnonymous) {
-      console.log('StreamProvider: User not authenticated or anonymous, clearing token');
-      setAuthTokenToUse(null);
-      return;
-    }
-    
+
     // If authenticated but no access token, try to get it from Supabase
     try {
       console.log('StreamProvider: Attempting to get token directly from Supabase');
