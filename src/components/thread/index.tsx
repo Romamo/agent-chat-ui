@@ -234,7 +234,7 @@ export function Thread() {
           </div>
         )}
         {chatStarted && (
-          <div className="flex items-center justify-between gap-3 p-2 pl-4 z-10 relative">
+          <div className="flex items-center justify-between gap-3 p-2 z-10 relative">
             <div className="flex items-center justify-start gap-2 relative">
               <div className="absolute left-0 z-10">
                 {(!chatHistoryOpen || !isLargeScreen) && (
