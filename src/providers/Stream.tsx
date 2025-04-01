@@ -254,6 +254,13 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
       return;
     }
 
+    // If not authenticated or is anonymous, clear the token
+    if (!isAuthenticated || isAnonymous) {
+      console.log('StreamProvider: User not authenticated or anonymous, clearing token');
+      setAuthTokenToUse(null);
+      return;
+    }
+
     // If authenticated but no access token, try to get it from Supabase
     try {
       console.log('StreamProvider: Attempting to get token directly from Supabase');
