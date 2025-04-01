@@ -120,12 +120,26 @@ const StreamSession = ({
   );
 };
 
+// Default values for the form
+const DEFAULT_API_URL = "http://localhost:2024";
+const DEFAULT_ASSISTANT_ID = "agent";
+
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
-  const [apiUrl, setApiUrl] = useQueryState("apiUrl");
+  // Get environment variables
+  const envApiUrl = import.meta.env.VITE_API_URL as string;
+  const envAssistantId = import.meta.env.VITE_ASSISTANT_ID as string;
+  const envApiKey = import.meta.env.VITE_LANGSMITH_API_KEY as string;
+
+  // Use URL params with env var fallbacks
+  const [apiUrl, setApiUrl] = useQueryState("apiUrl", { defaultValue: envApiUrl || "" });
+  const [assistantId, setAssistantId] = useQueryState("assistantId", { defaultValue: envAssistantId || "" });
+  
+  // For API key, use localStorage with env var fallback
   const [apiKey, _setApiKey] = useState(() => {
-    return getApiKey();
+    const storedKey = getApiKey();
+    return storedKey || envApiKey || "";
   });
 
   const setApiKey = (key: string) => {
@@ -133,9 +147,12 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
     _setApiKey(key);
   };
 
-  const [assistantId, setAssistantId] = useQueryState("assistantId");
-
-  if (!apiUrl || !assistantId) {
+  // Determine final values to use, prioritizing URL params then env vars
+  const finalApiUrl = apiUrl || envApiUrl;
+  const finalAssistantId = assistantId || envAssistantId;
+  
+  // If we're missing any required values, show the form
+  if (!finalApiUrl || !finalAssistantId) {
     return (
       <div className="flex items-center justify-center min-h-screen w-full p-4">
         <div className="animate-in fade-in-0 zoom-in-95 flex flex-col border bg-background shadow-lg rounded-lg max-w-3xl">
@@ -181,7 +198,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
                 id="apiUrl"
                 name="apiUrl"
                 className="bg-background"
-                defaultValue={apiUrl ?? "http://localhost:2024"}
+                defaultValue={apiUrl || DEFAULT_API_URL}
                 required
               />
             </div>
@@ -199,7 +216,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
                 id="assistantId"
                 name="assistantId"
                 className="bg-background"
-                defaultValue={assistantId ?? "agent"}
+                defaultValue={assistantId || DEFAULT_ASSISTANT_ID}
                 required
               />
             </div>

@@ -47,3 +47,21 @@ Once the app is running (or if using the deployed site), you'll be prompted to e
 - **LangSmith API Key**: (only required for connecting to deployed LangGraph servers) Your LangSmith API key to use when authenticating requests sent to LangGraph servers.
 
 After entering these values, click `Continue`. You'll then be redirected to a chat interface where you can start chatting with your LangGraph server.
+
+## Environment Variables
+
+You can bypass the initial setup form by setting the following environment variables:
+
+```
+VITE_API_URL=http://localhost:2024
+VITE_ASSISTANT_ID=agent
+VITE_LANGSMITH_API_KEY=your_api_key_if_needed
+```
+
+To use these variables:
+
+1. Copy the `.env.example` file to a new file named `.env`
+2. Fill in the values in the `.env` file
+3. Restart the application
+
+When these environment variables are set, the application will use them instead of showing the setup form.
