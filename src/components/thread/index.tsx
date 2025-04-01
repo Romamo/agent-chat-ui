@@ -3,7 +3,11 @@ import { ReactNode, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useStreamContext } from "@/providers/Stream";
+import { useAuth } from "@/auth/providers";
 import { useState, FormEvent } from "react";
+import { getAuthProvider } from "@/lib/auth-config";
+import { SignInModal } from "../auth/SignInModal";
+import { AuthButton } from "../auth/AuthButton";
 import { Button } from "../ui/button";
 import { Checkpoint, Message } from "@langchain/langgraph-sdk";
 import { AssistantMessage, AssistantMessageLoading } from "./messages/ai";
@@ -79,13 +83,33 @@ export function Thread() {
   );
   const [input, setInput] = useState("");
   const [firstTokenReceived, setFirstTokenReceived] = useState(false);
+  const [isSignInModalOpen, setIsSignInModalOpen] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const prevAuthState = useRef<boolean | null>(null);
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
 
   const stream = useStreamContext();
+  const { isAuthenticated } = useAuth();
   const messages = stream.messages;
   const isLoading = stream.isLoading;
 
   const lastError = useRef<string | undefined>(undefined);
+  
+  // Load any saved pending message from localStorage on component mount
+  useEffect(() => {
+    const savedMessage = localStorage.getItem('pendingMessage');
+    if (savedMessage) {
+      setPendingMessage(savedMessage);
+      setInput(savedMessage);
+    }
+  }, []);
+  
+  // We're no longer using this effect to auto-send messages after authentication
+  // Instead, we're handling it directly in the onSignInSuccess callback
+  useEffect(() => {
+    // Update previous auth state
+    prevAuthState.current = isAuthenticated;
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!stream.error) {
@@ -93,7 +117,10 @@ export function Thread() {
       return;
     }
     try {
-      const message = (stream.error as any).message;
+      const error = stream.error as any;
+      const message = error.message;
+      const status = error.status || (error.response && error.response.status);
+      
       if (!message || lastError.current === message) {
         // Message has already been logged. do not modify ref, return early.
         return;
@@ -101,15 +128,34 @@ export function Thread() {
 
       // Message is defined, and it has not been logged yet. Save it, and send the error
       lastError.current = message;
-      toast.error("An error occurred. Please try again.", {
-        description: (
-          <p>
-            <strong>Error:</strong> <code>{message}</code>
-          </p>
-        ),
-        richColors: true,
-        closeButton: true,
-      });
+      
+      // Check if error is a 403 Forbidden
+      if (status === 403 || (message && message.includes("403"))) {
+        // Save the current input as pending message
+        if (input && input.trim()) {
+          setPendingMessage(input);
+          localStorage.setItem('pendingMessage', input);
+        }
+        
+        toast.error("Authentication required", {
+          description: "Please sign in to send your message. Your message will be preserved.",
+          duration: 5000,
+          richColors: true,
+          closeButton: true,
+        });
+        setIsSignInModalOpen(true);
+      } else {
+        // For other errors, show the generic error message
+        toast.error("An error occurred. Please try again.", {
+          description: (
+            <p>
+              <strong>Error:</strong> <code>{message}</code>
+            </p>
+          ),
+          richColors: true,
+          closeButton: true,
+        });
+      }
     } catch {
       // no-op
     }
@@ -129,18 +175,65 @@ export function Thread() {
     prevMessageLength.current = messages.length;
   }, [messages]);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    
+    // Ensure we have the latest pending message from localStorage if available
+    const storedMessage = localStorage.getItem('pendingMessage');
+    if (storedMessage && !pendingMessage) {
+      setPendingMessage(storedMessage);
+    }
+    
+    // Use pending message if available, otherwise use input
+    // We need to directly access localStorage here because state updates might not be reflected immediately
+    const messageToSend = pendingMessage || storedMessage || input;
+    
+    if (!messageToSend?.trim() || isLoading) {
+      return;
+    }
+    
+    // Check if user is authenticated before sending the message
+    // Skip authentication check if using anonymous auth provider
+    const currentAuthProvider = getAuthProvider();
+    
+    // Direct check of environment variables for debugging
+    const directEnvCheck = {
+      VITE_ENABLE_AUTH: import.meta.env.VITE_ENABLE_AUTH,
+      VITE_AUTH_PROVIDER: import.meta.env.VITE_AUTH_PROVIDER,
+      rawProvider: import.meta.env.VITE_AUTH_PROVIDER,
+      providerType: typeof import.meta.env.VITE_AUTH_PROVIDER
+    };
+    
+    console.log('[Thread] Direct env check:', directEnvCheck);
+    console.log('[Thread] Auth check when sending message:', { 
+      isAuthenticated, 
+      authProvider: currentAuthProvider,
+      willShowSignIn: !isAuthenticated && currentAuthProvider !== 'anon'
+    });
+    
+    // Force skip sign-in if VITE_AUTH_PROVIDER is explicitly 'anon'
+    const forceSkipSignIn = import.meta.env.VITE_AUTH_PROVIDER === 'anon';
+    
+    if (!isAuthenticated && currentAuthProvider !== 'anon' && !forceSkipSignIn) {
+      console.log('[Thread] Opening sign-in modal');
+      setPendingMessage(messageToSend);
+      localStorage.setItem('pendingMessage', messageToSend);
+      setIsSignInModalOpen(true);
+      return;
+    }
+    
     setFirstTokenReceived(false);
 
     const newHumanMessage: Message = {
       id: uuidv4(),
       type: "human",
-      content: input,
+      content: messageToSend,
     };
 
     const toolMessages = ensureToolCallsHaveResponses(stream.messages);
+    
+    // We're not catching errors here anymore as they're handled by the useEffect hook
+    // that watches stream.error
     stream.submit(
       { messages: [...toolMessages, newHumanMessage] },
       {
@@ -156,7 +249,10 @@ export function Thread() {
       },
     );
 
+    // Clear both input and pending message
     setInput("");
+    setPendingMessage(null);
+    localStorage.removeItem('pendingMessage');
   };
 
   const handleRegenerate = (
@@ -196,6 +292,49 @@ export function Thread() {
           </div>
         </motion.div>
       </div>
+      
+      {/* Sign In Modal */}
+      <SignInModal 
+        isOpen={isSignInModalOpen} 
+        onClose={() => {
+          setIsSignInModalOpen(false);
+          // Keep the pending message in the input field
+          if (pendingMessage) {
+            setInput(pendingMessage);
+          }
+        }} 
+        onSignInSuccess={() => {
+          setIsSignInModalOpen(false);
+          
+          // Get the message directly from localStorage to avoid closure issues with state
+          const storedMessage = localStorage.getItem('pendingMessage');
+          
+          if (storedMessage) {
+            // Use a longer timeout to ensure auth state is fully updated
+            setTimeout(() => {
+              // Create a function that directly uses the stored message
+              const submitStoredMessage = () => {
+                // Create a synthetic submit event
+                const event = new Event('submit') as unknown as FormEvent;
+                
+                // Temporarily set the input to the stored message
+                setInput(storedMessage);
+                
+                // Small delay to ensure state update
+                setTimeout(() => {
+                  // Clear localStorage first
+                  localStorage.removeItem('pendingMessage');
+                  
+                  // Then submit the form
+                  handleSubmit(event);
+                }, 100);
+              };
+              
+              submitStoredMessage();
+            }, 1500);
+          }
+        }}
+      />
       <motion.div
         className={cn(
           "flex-1 flex flex-col min-w-0 overflow-hidden relative",
@@ -217,24 +356,31 @@ export function Thread() {
         }
       >
         {!chatStarted && (
-          <div className="absolute top-0 left-0 w-full flex items-center justify-between gap-3 p-2 pl-4 z-10">
-            {(!chatHistoryOpen || !isLargeScreen) && (
-              <Button
-                className="hover:bg-gray-100"
-                variant="ghost"
-                onClick={() => setChatHistoryOpen((p) => !p)}
-              >
-                {chatHistoryOpen ? (
-                  <PanelRightOpen className="size-5" />
-                ) : (
-                  <PanelRightClose className="size-5" />
-                )}
-              </Button>
-            )}
+          <div className="absolute top-0 left-0 w-full flex items-center justify-between z-10 h-[52px] px-4">
+            <div className="flex items-center">
+              {(!chatHistoryOpen || !isLargeScreen) ? (
+                <Button
+                  className="hover:bg-gray-100"
+                  variant="ghost"
+                  onClick={() => setChatHistoryOpen((p) => !p)}
+                >
+                  {chatHistoryOpen ? (
+                    <PanelRightOpen className="size-5" />
+                  ) : (
+                    <PanelRightClose className="size-5" />
+                  )}
+                </Button>
+              ) : (
+                <div className="w-10"></div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <AuthButton />
+            </div>
           </div>
         )}
         {chatStarted && (
-          <div className="flex items-center justify-between gap-3 p-2 z-10 relative">
+          <div className="flex items-center justify-between gap-3 h-[52px] px-4 z-10 relative">
             <div className="flex items-center justify-start gap-2 relative">
               <div className="absolute left-0 z-10">
                 {(!chatHistoryOpen || !isLargeScreen) && (
@@ -283,6 +429,18 @@ export function Thread() {
               </motion.div>
             </div>
 
+            <div className="flex items-center gap-2">
+              <AuthButton />
+              <TooltipIconButton
+                size="lg"
+                className="p-4"
+                tooltip="New thread"
+                variant="ghost"
+                onClick={() => setThreadId(null)}
+              >
+                <SquarePen className="size-5" />
+              </TooltipIconButton>
+            </div>
             <div className="absolute inset-x-0 top-full h-5 bg-gradient-to-b from-background to-background/0" />
           </div>
         )}
@@ -340,7 +498,14 @@ export function Thread() {
                   >
                     <textarea
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
+                      onChange={(e) => {
+                        setInput(e.target.value);
+                        // If we have a pending message, update it as well
+                        if (pendingMessage) {
+                          setPendingMessage(e.target.value);
+                          localStorage.setItem('pendingMessage', e.target.value);
+                        }
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey && !e.metaKey) {
                           e.preventDefault();

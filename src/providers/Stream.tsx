@@ -4,6 +4,7 @@ import React, {
   ReactNode,
   useState,
   useEffect,
+  useCallback,
 } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import { type Message } from "@langchain/langgraph-sdk";
@@ -21,6 +22,8 @@ import { ArrowRight } from "lucide-react";
 import { PasswordInput } from "@/components/ui/password-input";
 import { getApiKey } from "@/lib/api-key";
 import { useThreads } from "./Thread";
+import { useAuth } from "@/auth/providers";
+import { getLangGraphHeaders } from "@/lib/auth-config";
 import { toast } from "sonner";
 
 export type StateType = { messages: Message[]; ui?: UIMessage[] };
@@ -46,14 +49,13 @@ async function sleep(ms = 4000) {
 async function checkGraphStatus(
   apiUrl: string,
   apiKey: string | null,
+  authToken: string | null
 ): Promise<boolean> {
   try {
+    const headers = getLangGraphHeaders(apiKey, authToken);
+    console.log('checkGraphStatus', headers);
     const res = await fetch(`${apiUrl}/info`, {
-      ...(apiKey && {
-        headers: {
-          "X-Api-Key": apiKey,
-        },
-      }),
+      headers,
     });
 
     return res.ok;
@@ -68,14 +70,92 @@ const StreamSession = ({
   apiKey,
   apiUrl,
   assistantId,
+  authToken,
+  userId,
+  isAnonymous,
 }: {
   children: ReactNode;
   apiKey: string | null;
   apiUrl: string;
   assistantId: string;
+  authToken: string | null;
+  userId: string | null;
+  isAnonymous: boolean;
 }) => {
+  // Log the props received by StreamSession
+  console.log('StreamSession initialized with:', {
+    hasApiKey: !!apiKey,
+    apiUrl,
+    assistantId,
+    hasAuthToken: !!authToken,
+    authToken: authToken ? `${authToken.substring(0, 5)}...` : null,
+    userId
+  });
   const [threadId, setThreadId] = useQueryState("threadId");
   const { getThreads, setThreads } = useThreads();
+  // Create a function to modify requests to include user ID in thread creation and add auth headers
+  useEffect(() => {
+    // Store the original fetch function
+    const originalFetch = window.fetch;
+    
+    // Override the global fetch function
+    window.fetch = function(input: RequestInfo | URL, init?: RequestInit) {
+      // Convert input to string to check if it's a thread creation request
+      const url = input.toString();
+      
+      // Only modify thread creation requests if userId is available
+      if (userId && url.includes('/threads') && init?.method === 'POST') {
+        try {
+          // Get the request body
+          const bodyStr = init.body as string;
+          if (bodyStr) {
+            const body = JSON.parse(bodyStr);
+            
+            // Add owner to thread metadata
+            body.metadata = { ...body.metadata, owner: userId };
+            
+            // Update the request with the modified body
+            init.body = JSON.stringify(body);
+            
+            console.log(`Adding owner ${userId} to thread creation:`, body);
+          }
+        } catch (error) {
+          console.error('Error adding user ID to thread creation:', error);
+        }
+      }
+      
+      // Add auth headers to all requests
+      // For API key, always include it if available
+      // For auth token, only include it if it's an authenticated user (not anonymous)
+      console.log('Adding auth headers to request:', {
+        url,
+        hasApiKey: !!apiKey,
+        hasAuthToken: !!authToken,
+        authToken: authToken ? `${authToken.substring(0, 5)}...` : null,
+        isAnonymous // Use the isAnonymous flag passed from StreamProvider
+      });
+      
+      // For anonymous users, always set authToken to null to prevent Authorization header
+      const tokenToUse = isAnonymous ? null : authToken;
+      const headers = getLangGraphHeaders(apiKey, tokenToUse);
+      init = init || {};
+      init.headers = { ...init.headers, ...headers };
+      
+      // Log auth headers for debugging
+      if (url.includes('/threads')) {
+        console.log('Auth headers for request to ' + url + ':', JSON.stringify(headers), 'Has auth token:', !!authToken);
+      }
+      
+      // Call the original fetch with our modifications
+      return originalFetch(input, init);
+    };
+    
+    // Cleanup: restore the original fetch when component unmounts
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [userId, apiKey, authToken]);
+  
   const streamValue = useTypedStream({
     apiUrl,
     apiKey: apiKey ?? undefined,
@@ -95,8 +175,21 @@ const StreamSession = ({
     },
   });
 
+  // Get auth loading state from Auth provider
+  const { isLoading: authLoading } = useAuth();
+  
   useEffect(() => {
-    checkGraphStatus(apiUrl, apiKey).then((ok) => {
+    console.log('useEffect', { authLoading });
+    // Only check graph status after auth is initialized
+    if (authLoading) {
+      console.log('Skipping graph status check - auth still loading');
+      return;
+    }
+    
+    console.log('Checking graph status with auth initialized:', { authToken, isAnonymous });
+    // For anonymous users, explicitly set authToken to null
+    const tokenToUse = isAnonymous ? null : authToken;
+    checkGraphStatus(apiUrl, apiKey, tokenToUse).then((ok) => {
       if (!ok) {
         toast.error("Failed to connect to LangGraph server", {
           description: () => (
@@ -111,7 +204,7 @@ const StreamSession = ({
         });
       }
     });
-  }, [apiKey, apiUrl]);
+  }, [apiKey, apiUrl, authToken, authLoading]); // Re-run when auth loading state changes
 
   return (
     <StreamContext.Provider value={streamValue}>
@@ -127,6 +220,15 @@ const DEFAULT_ASSISTANT_ID = "agent";
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
+  // First, declare all state hooks at the top level
+  const [apiUrl, setApiUrl] = useQueryState("apiUrl");
+  const [apiKey, _setApiKey] = useState(() => getApiKey());
+  const [assistantId, setAssistantId] = useQueryState("assistantId");
+  const [authTokenToUse, setAuthTokenToUse] = useState<string | null>(null);
+  
+  // Get auth token, user ID, and loading state from Auth provider
+  const { accessToken, isAuthenticated, userId, isAnonymous, isLoading: authLoading } = useAuth();
+
   // Get environment variables
   const envApiUrl = import.meta.env.VITE_API_URL as string;
   const envAssistantId = import.meta.env.VITE_ASSISTANT_ID as string;
@@ -142,9 +244,63 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
     return storedKey || envApiKey || "";
   });
 
-  const setApiKey = (key: string) => {
+  // Define all callbacks after state hooks
+  const setApiKey = useCallback((key: string) => {
     window.localStorage.setItem("lg:chat:apiKey", key);
     _setApiKey(key);
+  }, [_setApiKey]);
+  
+  // Define the token update function - moved up to ensure consistent hook order
+  const updateAuthToken = useCallback(async () => {
+    // First set the token from props if available
+    if (isAuthenticated && !isAnonymous && accessToken) {
+      console.log('StreamProvider: Using access token from auth context');
+      setAuthTokenToUse(accessToken);
+      return;
+    }
+    
+    // If not authenticated or is anonymous, clear the token
+    if (!isAuthenticated || isAnonymous) {
+      console.log('StreamProvider: User not authenticated or anonymous, clearing token');
+      setAuthTokenToUse(null);
+      return;
+    }
+    
+    // If authenticated but no access token, try to get it from Supabase
+    try {
+      console.log('StreamProvider: Attempting to get token directly from Supabase');
+      // Import supabase client directly to get the current session
+      const { supabase } = await import('@/lib/supabase');
+      if (!supabase) {
+        console.error('StreamProvider: Supabase client is not available');
+        return;
+      }
+      
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        console.log('StreamProvider: Retrieved access token directly from Supabase session');
+        setAuthTokenToUse(data.session.access_token);
+      } else {
+        console.log('StreamProvider: No access token in Supabase session');
+        setAuthTokenToUse(null);
+      }
+    } catch (error) {
+      console.error('StreamProvider: Error getting access token from Supabase:', error);
+      setAuthTokenToUse(null);
+    }
+  }, [isAuthenticated, isAnonymous, accessToken, setAuthTokenToUse]);
+  
+  // Use a single useEffect to update the token
+  useEffect(() => {
+    // Only try to get the token from Supabase if authenticated but no token
+    if (isAuthenticated && !isAnonymous) {
+      updateAuthToken();
+    } else {
+      setAuthTokenToUse(null);
+    }
+  }, [isAuthenticated, isAnonymous, accessToken, userId, updateAuthToken]);
+
+  if (!apiUrl || !assistantId) {
   };
 
   // Determine final values to use, prioritizing URL params then env vars
@@ -250,8 +406,47 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
     );
   }
 
+  // Show loading state while auth is initializing
+  if (authLoading) {
+    console.log('StreamProvider: Auth still loading, not rendering StreamSession yet');
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <LangGraphLogoSVG className="h-10 text-gray-400" />
+          <div className="text-gray-500">Initializing authentication...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Only render StreamSession after auth is fully loaded
+  console.log('StreamProvider: Auth loaded, rendering StreamSession with:', {
+    isAuthenticated,
+    isAnonymous,
+    hasAuthToken: !!accessToken,
+    accessToken: accessToken ? `${accessToken.substring(0, 5)}...` : null,
+    hasUserId: !!userId,
+    userId: userId
+  });
+  
+  // Note: Thread loading is now handled in the ThreadHistory component
+  
+  console.log('StreamProvider passing to StreamSession:', {
+    isAuthenticated,
+    isAnonymous,
+    accessToken: accessToken ? `${accessToken.substring(0, 5)}...` : null,
+    authTokenToUse: authTokenToUse ? `${authTokenToUse.substring(0, 5)}...` : null
+  });
+  
   return (
-    <StreamSession apiKey={apiKey} apiUrl={apiUrl} assistantId={assistantId}>
+    <StreamSession 
+      apiKey={apiKey} 
+      apiUrl={apiUrl} 
+      assistantId={assistantId}
+      authToken={authTokenToUse}
+      userId={userId}
+      isAnonymous={isAnonymous}
+    >
       {children}
     </StreamSession>
   );

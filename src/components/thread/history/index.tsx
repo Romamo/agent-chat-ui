@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useThreads } from "@/providers/Thread";
 import { Thread } from "@langchain/langgraph-sdk";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { getContentString } from "../utils";
 import { useQueryState, parseAsBoolean } from "nuqs";
@@ -14,6 +14,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PanelRightOpen, PanelRightClose } from "lucide-react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useAuth } from "@/auth/providers";
 
 function ThreadList({
   threads,
@@ -76,17 +77,53 @@ export default function ThreadHistory() {
     parseAsBoolean.withDefault(false),
   );
 
-  const { getThreads, threads, setThreads, threadsLoading, setThreadsLoading } =
-    useThreads();
-
+  const { getThreads, threads, setThreads, threadsLoading, setThreadsLoading } = useThreads();
+  
+  // Get auth state to ensure we have auth info before loading threads
+  const { isLoading: authLoading, isAuthenticated, user } = useAuth();
+  
+  // Use a ref to track if threads have been loaded for this user/session
+  // This prevents multiple loading calls even in React strict mode
+  const loadedRef = useRef(false);
+  const userIdRef = useRef<string | null>(null);
+  
+  // Load threads after authentication is complete
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    // Only load threads after auth is initialized and we're in browser
+    if (typeof window === "undefined" || authLoading) {
+      setThreadsLoading(true);
+      return;
+    }
+    
+    // Get current user ID or 'anonymous' if not authenticated
+    const currentUserId = isAuthenticated && user ? user.id : 'anonymous';
+    
+    // Check if we've already loaded threads for this user
+    // or if the user has changed (e.g., after login/logout)
+    if (loadedRef.current && userIdRef.current === currentUserId) {
+      console.log('ThreadHistory: Already loaded threads for this user, skipping');
+      return;
+    }
+    
+    // Update refs to track this load
+    loadedRef.current = true;
+    userIdRef.current = currentUserId;
+    
+    console.log(`ThreadHistory: Loading threads for user: ${currentUserId}`);
     setThreadsLoading(true);
+    
     getThreads()
-      .then(setThreads)
-      .catch(console.error)
+      .then(threads => {
+        console.log(`ThreadHistory: Loaded ${threads.length} threads for user: ${currentUserId}`);
+        setThreads(threads);
+      })
+      .catch(error => {
+        console.error('ThreadHistory: Error loading threads:', error);
+        // Reset the loaded flag on error so we can try again
+        loadedRef.current = false;
+      })
       .finally(() => setThreadsLoading(false));
-  }, []);
+  }, [authLoading, isAuthenticated, user, getThreads, setThreads, setThreadsLoading]);
 
   return (
     <>
