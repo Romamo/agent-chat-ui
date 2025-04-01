@@ -104,3 +104,22 @@ The authentication system is designed to be pluggable. Currently, it supports Su
 
 - `src/lib/auth-config.ts`: Add new provider types and configuration
 - `src/providers/Auth.tsx`: Implement provider-specific authentication logic
+
+## Environment Variables
+
+You can bypass the initial setup form by setting the following environment variables:
+
+```
+VITE_API_URL=http://localhost:2024
+VITE_ASSISTANT_ID=agent
+VITE_LANGSMITH_API_KEY=your_api_key_if_needed
+```
+
+To use these variables:
+
+1. Copy the `.env.example` file to a new file named `.env`
+2. Fill in the values in the `.env` file
+3. Restart the application
+
+When these environment variables are set, the application will use them instead of showing the setup form.
+

@@ -397,9 +397,8 @@ export function Thread() {
                   </Button>
                 )}
               </div>
-              <motion.button
-                className="flex gap-2 items-center cursor-pointer"
-                onClick={() => setThreadId(null)}
+              <motion.div
+                className="flex gap-2 items-center"
                 animate={{
                   marginLeft: !chatHistoryOpen ? 48 : 0,
                 }}
@@ -409,11 +408,25 @@ export function Thread() {
                   damping: 30,
                 }}
               >
-                <LangGraphLogoSVG width={32} height={32} />
-                <span className="text-xl font-semibold tracking-tight">
-                  Agent Chat
-                </span>
-              </motion.button>
+                <TooltipIconButton
+                  size="lg"
+                  className="p-2"
+                  tooltip="New thread"
+                  variant="ghost"
+                  onClick={() => setThreadId(null)}
+                >
+                  <SquarePen className="size-5" />
+                </TooltipIconButton>
+                
+                <motion.button
+                  className="flex gap-2 items-center"
+                >
+                  <LangGraphLogoSVG width={32} height={32} />
+                  <span className="text-xl font-semibold tracking-tight">
+                    Agent Chat
+                  </span>
+                </motion.button>
+              </motion.div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -428,7 +441,6 @@ export function Thread() {
                 <SquarePen className="size-5" />
               </TooltipIconButton>
             </div>
-
             <div className="absolute inset-x-0 top-full h-5 bg-gradient-to-b from-background to-background/0" />
           </div>
         )}
