@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { useThreads } from "@/providers/Thread";
 import { Thread } from "@langchain/langgraph-sdk";
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 
 import { getContentString } from "../utils";
 import { useQueryState, parseAsBoolean } from "nuqs";
@@ -86,11 +87,17 @@ export default function ThreadHistory() {
   // This prevents multiple loading calls even in React strict mode
   const loadedRef = useRef(false);
   const userIdRef = useRef<string | null>(null);
+  const loadAttemptRef = useRef(0);
   
   // Load threads after authentication is complete
   useEffect(() => {
     // Only load threads after auth is initialized and we're in browser
-    if (typeof window === "undefined" || authLoading) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    
+    if (authLoading) {
+      console.log('ThreadHistory: Auth still loading, waiting...');
       setThreadsLoading(true);
       return;
     }
@@ -105,24 +112,41 @@ export default function ThreadHistory() {
       return;
     }
     
-    // Update refs to track this load
-    loadedRef.current = true;
-    userIdRef.current = currentUserId;
+    // Track this load attempt
+    const currentAttempt = ++loadAttemptRef.current;
     
-    console.log(`ThreadHistory: Loading threads for user: ${currentUserId}`);
+    console.log(`ThreadHistory: Loading threads for user: ${currentUserId} (attempt ${currentAttempt})`);
     setThreadsLoading(true);
     
-    getThreads()
-      .then(threads => {
-        console.log(`ThreadHistory: Loaded ${threads.length} threads for user: ${currentUserId}`);
-        setThreads(threads);
-      })
-      .catch(error => {
-        console.error('ThreadHistory: Error loading threads:', error);
-        // Reset the loaded flag on error so we can try again
-        loadedRef.current = false;
-      })
-      .finally(() => setThreadsLoading(false));
+    // Small delay to ensure auth state is fully propagated
+    setTimeout(() => {
+      // Check if this is still the most recent attempt
+      if (currentAttempt !== loadAttemptRef.current) {
+        console.log(`ThreadHistory: Skipping stale load attempt ${currentAttempt}`);
+        return;
+      }
+      
+      getThreads()
+        .then(threads => {
+          // Update refs to track successful load
+          loadedRef.current = true;
+          userIdRef.current = currentUserId;
+          
+          console.log(`ThreadHistory: Loaded ${threads.length} threads for user: ${currentUserId}`);
+          setThreads(threads);
+        })
+        .catch(error => {
+          console.error('ThreadHistory: Error loading threads:', error);
+          toast.error('Failed to load threads. Please try refreshing the page.');
+          // Reset the loaded flag on error so we can try again
+          loadedRef.current = false;
+        })
+        .finally(() => {
+          if (currentAttempt === loadAttemptRef.current) {
+            setThreadsLoading(false);
+          }
+        });
+    }, 100); // Small delay to ensure auth state is fully propagated
   }, [authLoading, isAuthenticated, user, getThreads, setThreads, setThreadsLoading]);
 
   return (
