@@ -94,18 +94,42 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     updateAuthToken();
   }, [isAuthenticated, isAnonymous, accessToken, user?.id]);
   
+  // Add a debug effect to log token state changes
+  useEffect(() => {
+    console.log('Thread provider: Auth token state updated:', {
+      hasToken: !!authTokenForRequests,
+      token: authTokenForRequests ? `${authTokenForRequests.substring(0, 5)}...` : null,
+      isAuthenticated,
+      isAnonymous,
+      userId: user?.id
+    });
+  }, [authTokenForRequests, isAuthenticated, isAnonymous, user?.id]);
+  
   const getThreads = useCallback(async (): Promise<Thread[]> => {
-    if (!apiUrl || !assistantId) {
-      console.log('Thread provider: Missing apiUrl or assistantId, cannot fetch threads');
+    // Get environment variables for defaults
+    const envApiUrl = import.meta.env.VITE_API_URL as string;
+    const envAssistantId = import.meta.env.VITE_ASSISTANT_ID as string;
+    
+    // Use URL parameters with env var fallbacks
+    const effectiveApiUrl = apiUrl || envApiUrl;
+    const effectiveAssistantId = assistantId || envAssistantId;
+    
+    if (!effectiveApiUrl || !effectiveAssistantId) {
+      console.log('Thread provider: Missing apiUrl or assistantId in both URL and environment variables');
       return [];
     }
     
+    console.log(`Thread provider: Using apiUrl: ${effectiveApiUrl}, assistantId: ${effectiveAssistantId}`);
+    
     // Get API key
     const apiKey = getApiKey();
+    if (!apiKey) {
+      console.warn('Thread provider: No API key available');
+    }
     
     // Build search metadata with assistant/graph ID
     const searchMetadata: ThreadSearchMetadata = {
-      ...getThreadSearchMetadata(assistantId),
+      ...getThreadSearchMetadata(effectiveAssistantId),
     };
     
     // Add owner to metadata search if user is authenticated
@@ -122,14 +146,17 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       isAnonymous,
       hasAccessToken: !!accessToken,
+      hasAuthTokenForRequests: !!authTokenForRequests,
       accessToken: accessToken ? `${accessToken.substring(0, 5)}...` : null,
+      authTokenForRequests: authTokenForRequests ? `${authTokenForRequests.substring(0, 5)}...` : null,
       user: user ? { id: user.id } : null
     });
     
     // Determine which auth token to use
     let tokenToUse = null;
     if (isAuthenticated && !isAnonymous) {
-      tokenToUse = authTokenForRequests;
+      // Prefer authTokenForRequests, but fall back to accessToken if needed
+      tokenToUse = authTokenForRequests || accessToken;
       console.log('Thread provider: Using auth token for request:', tokenToUse ? `${tokenToUse.substring(0, 5)}...` : 'null');
     } else {
       console.log('Thread provider: Not using auth token for anonymous user');
@@ -139,11 +166,10 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
     const headers = getLangGraphHeaders(apiKey, tokenToUse);
     
     console.log('Thread provider: Search headers:', JSON.stringify(headers));
-    console.log('Thread provider: Auth token available:', !!accessToken, 'User authenticated:', isAuthenticated, 'Is anonymous:', isAnonymous);
     
     // Use fetch with authentication headers instead of client.threads.search
-    console.log('Thread provider: Sending thread search request to:', `${apiUrl}/threads/search`);
-    console.log('Thread provider: Search metadata:', searchMetadata);
+    console.log('Thread provider: Sending thread search request to:', `${effectiveApiUrl}/threads/search`);
+    console.log('Thread provider: Search metadata:', JSON.stringify(searchMetadata));
     
     try {
       // Create the complete headers object for the request
@@ -153,10 +179,9 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       };
       
       // Log the complete headers being sent
-      console.log('Thread provider: Complete headers for /threads/search request:', requestHeaders);
       console.log('Thread provider: Authorization header present:', 'Authorization' in requestHeaders);
       
-      const response = await fetch(`${apiUrl}/threads/search`, {
+      const response = await fetch(`${effectiveApiUrl}/threads/search`, {
         method: 'POST',
         headers: requestHeaders,
         body: JSON.stringify({
@@ -187,9 +212,22 @@ export function ThreadProvider({ children }: { children: ReactNode }) {
       return threads;
     } catch (error) {
       console.error('Thread provider: Error during thread search fetch:', error);
+      
+      // Add more context to the error
+      if (error instanceof Error) {
+        // Enhance error message with auth state info
+        const enhancedError = new Error(
+          `${error.message} (Auth state: ${isAuthenticated ? 'authenticated' : 'not authenticated'}, ` +
+          `Token present: ${!!tokenToUse})`
+        );
+        // Preserve the original stack trace
+        enhancedError.stack = error.stack;
+        throw enhancedError;
+      }
+      
       throw error; // Re-throw to allow the component to handle the error
     }
-  }, [apiUrl, assistantId, isAuthenticated, isAnonymous, user, authTokenForRequests]);
+  }, [apiUrl, assistantId, isAuthenticated, isAnonymous, user, authTokenForRequests, accessToken]);
 
   const value = {
     getThreads,

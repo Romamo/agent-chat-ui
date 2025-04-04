@@ -77,11 +77,19 @@ export default function ThreadHistory() {
     "chatHistoryOpen",
     parseAsBoolean.withDefault(false),
   );
+  
+  // Get URL parameters at the component level
+  const [apiUrl, setApiUrl] = useQueryState("apiUrl");
+  const [assistantId, setAssistantId] = useQueryState("assistantId");
+  
+  // Get environment variables for defaults
+  const envApiUrl = import.meta.env.VITE_API_URL as string;
+  const envAssistantId = import.meta.env.VITE_ASSISTANT_ID as string;
 
   const { getThreads, threads, setThreads, threadsLoading, setThreadsLoading } = useThreads();
   
   // Get auth state to ensure we have auth info before loading threads
-  const { isLoading: authLoading, isAuthenticated, user } = useAuth();
+  const { isLoading: authLoading, isAuthenticated, user, accessToken } = useAuth();
   
   // Use a ref to track if threads have been loaded for this user/session
   // This prevents multiple loading calls even in React strict mode
@@ -102,6 +110,41 @@ export default function ThreadHistory() {
       return;
     }
     
+    // Check if we have the required URL parameters and set defaults if missing
+    let effectiveApiUrl = apiUrl;
+    let effectiveAssistantId = assistantId;
+    let paramsUpdated = false;
+    
+    if (!effectiveApiUrl && envApiUrl) {
+      console.warn('ThreadHistory: Missing apiUrl in URL parameters, using env default:', envApiUrl);
+      effectiveApiUrl = envApiUrl;
+      // Update the URL parameter
+      setApiUrl(envApiUrl);
+      paramsUpdated = true;
+    }
+    
+    if (!effectiveAssistantId && envAssistantId) {
+      console.warn('ThreadHistory: Missing assistantId in URL parameters, using env default:', envAssistantId);
+      effectiveAssistantId = envAssistantId;
+      // Update the URL parameter
+      setAssistantId(envAssistantId);
+      paramsUpdated = true;
+    }
+    
+    // If still missing after trying env vars, show error
+    if (!effectiveApiUrl || !effectiveAssistantId) {
+      console.error('ThreadHistory: Missing apiUrl or assistantId in both URL and environment variables');
+      toast.error('Missing API URL or Assistant ID. Please check your configuration.');
+      setThreadsLoading(false);
+      return;
+    }
+    
+    // If we updated parameters, wait for the next render cycle
+    if (paramsUpdated) {
+      console.log('ThreadHistory: Updated URL parameters with defaults, waiting for next render cycle');
+      return;
+    }
+    
     // Get current user ID or 'anonymous' if not authenticated
     const currentUserId = isAuthenticated && user ? user.id : 'anonymous';
     
@@ -116,15 +159,18 @@ export default function ThreadHistory() {
     const currentAttempt = ++loadAttemptRef.current;
     
     console.log(`ThreadHistory: Loading threads for user: ${currentUserId} (attempt ${currentAttempt})`);
+    console.log(`ThreadHistory: Using apiUrl: ${effectiveApiUrl}, assistantId: ${effectiveAssistantId}`);
     setThreadsLoading(true);
     
-    // Small delay to ensure auth state is fully propagated
+    // Wait for auth state to be fully propagated
     setTimeout(() => {
       // Check if this is still the most recent attempt
       if (currentAttempt !== loadAttemptRef.current) {
         console.log(`ThreadHistory: Skipping stale load attempt ${currentAttempt}`);
         return;
       }
+      
+      console.log(`ThreadHistory: Executing getThreads with auth token: ${accessToken ? 'present' : 'not present'}`);
       
       getThreads()
         .then(threads => {
@@ -137,7 +183,16 @@ export default function ThreadHistory() {
         })
         .catch(error => {
           console.error('ThreadHistory: Error loading threads:', error);
-          toast.error('Failed to load threads. Please try refreshing the page.');
+          
+          // More specific error message based on error type
+          if (error.message && error.message.includes('401')) {
+            toast.error('Authentication error loading threads. Please sign in again.');
+          } else if (error.message && error.message.includes('404')) {
+            toast.error('Thread service not found. Please check your API URL.');
+          } else {
+            toast.error('Failed to load threads. Please try refreshing the page.');
+          }
+          
           // Reset the loaded flag on error so we can try again
           loadedRef.current = false;
         })
@@ -146,8 +201,8 @@ export default function ThreadHistory() {
             setThreadsLoading(false);
           }
         });
-    }, 100); // Small delay to ensure auth state is fully propagated
-  }, [authLoading, isAuthenticated, user, getThreads, setThreads, setThreadsLoading]);
+    }, 300); // Increased delay to ensure auth state is fully propagated
+  }, [authLoading, isAuthenticated, user, accessToken, apiUrl, assistantId, getThreads, setThreads, setThreadsLoading]);
 
   return (
     <>
