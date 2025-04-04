@@ -8,7 +8,7 @@ Agent Chat UI is a Vite + React application which enables chatting with any Lang
 ## Setup
 
 > [!TIP]
-> Don't want to run the app locally? Use the deployed site here: [agentchat.vercel.app](https://agentchat.vercel.app)!
+> Don't want to run the app locally? Use the deployed site here: [agent-chat-ui-auth.vercel.app](https://agent-chat-ui-auth.vercel.app/)!
 
 First, clone the repository, or run the [`npx` command](https://www.npmjs.com/package/create-agent-chat-app):
 
@@ -57,11 +57,11 @@ The application supports optional user authentication via Supabase. This allows 
 Authentication is controlled through environment variables. You can create a `.env` file in the root of the project based on the `.env.example` template:
 
 ```bash
-# Authentication Settings
-# Set to 'true' to enable user authentication
-VITE_ENABLE_AUTH=true
+# Auth Provider (Optional, defaults to 'none' if not specified)
+# Options: 'supabase', 'anon'
+VITE_AUTH_PROVIDER=supabase
 
-# Supabase Settings (Required if VITE_ENABLE_AUTH=true)
+# Supabase Settings (Required if VITE_AUTH_PROVIDER=supabase)
 VITE_SUPABASE_URL=your-supabase-url
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
@@ -72,31 +72,7 @@ If you're using Supabase authentication:
 
 1. Create a Supabase project at [supabase.com](https://supabase.com)
 2. Enable Email/Password authentication in the Auth settings
-3. Create a `profiles` table with the following schema:
-   ```sql
-   create table profiles (
-     id uuid references auth.users on delete cascade primary key,
-     full_name text,
-     avatar_url text,
-     updated_at timestamp with time zone
-   );
-   ```
-4. Set up a trigger to create a profile when a new user signs up:
-   ```sql
-   create function public.handle_new_user() 
-   returns trigger as $$
-   begin
-     insert into public.profiles (id, full_name)
-     values (new.id, new.raw_user_meta_data->>'full_name');
-     return new;
-   end;
-   $$ language plpgsql security definer;
-   
-   create trigger on_auth_user_created
-     after insert on auth.users
-     for each row execute procedure public.handle_new_user();
-   ```
-5. Copy your Supabase URL and anon key to your `.env` file
+3. Copy your Supabase URL and anon key to your `.env` file
 
 ### Extending Authentication
 
