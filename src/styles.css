@@ -1,0 +1,94 @@
+/* Main application styles */
+@import "tailwindcss";
+
+/* Custom utility classes for the chat UI */
+@layer utilities {
+  /* Custom scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Authentication form styling */
+.auth-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.375rem;
+}
+
+.auth-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--ring));
+}
+
+.auth-button {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.auth-button-primary {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.auth-button-primary:hover {
+  background-color: hsl(var(--primary) / 0.9);
+}
+
+.auth-button-secondary {
+  background-color: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+}
+
+.auth-button-secondary:hover {
+  background-color: hsl(var(--secondary) / 0.9);
+}
+
+/* Chat UI specific utilities */
+.message-bubble-user {
+  background-color: hsl(var(--primary) / 0.1);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.message-bubble-agent {
+  background-color: hsl(var(--secondary) / 0.1);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.typing-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: hsl(var(--muted-foreground) / 0.7);
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
