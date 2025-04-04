@@ -4,7 +4,7 @@
  */
 
 // Authentication provider type
-export type AuthProvider = 'supabase' | 'anon';
+export type AuthProvider = 'supabase' | 'anon' | 'none';
 
 // Get the configured authentication provider
 export const getAuthProvider = (): AuthProvider => {
